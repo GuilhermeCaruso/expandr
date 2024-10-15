@@ -21,11 +21,10 @@ type Database struct {
 
 func NewDatabase(opts ...Option) *Database {
 	once.Do(func() {
-		dsn := ""
 
 		internalConfig := newConfig(opts...)
 
-		sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
+		sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(internalConfig.dsn)))
 
 		sqldb.SetMaxOpenConns(internalConfig.maxConns)
 		sqldb.SetMaxIdleConns(internalConfig.maxIdleConns)

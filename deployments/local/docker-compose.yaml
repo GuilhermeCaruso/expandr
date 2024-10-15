@@ -1,0 +1,10 @@
+version: '3.0'
+
+services:
+  core_postgres:
+    container_name: expandr_db
+    extends:
+      file: ../common/docker-compose.yaml
+      service: postgres
+    ports:
+      - 5438:5432

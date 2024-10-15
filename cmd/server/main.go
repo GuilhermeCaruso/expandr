@@ -7,8 +7,8 @@ import (
 
 func main() {
 	cfg := settings.NewConfig()
-
 	database.NewDatabase(
+		database.WithDSN(cfg.Db.DSN),
 		database.WithMaxConns(cfg.Db.MaxConns),
 		database.WithMaxIdleConns(cfg.Db.MaxIdleConns),
 		database.WithMaxConnIdleLifetime(cfg.Db.MaxConnIdleLifetime),

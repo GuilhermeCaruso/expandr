@@ -3,6 +3,7 @@ package database
 import "time"
 
 type config struct {
+	dsn                 string
 	maxConns            int
 	maxIdleConns        int
 	maxConnLifetime     time.Duration
@@ -10,6 +11,12 @@ type config struct {
 }
 
 type Option func(*config)
+
+func WithDSN(dsn string) Option {
+	return func(c *config) {
+		c.dsn = dsn
+	}
+}
 
 func WithMaxConns(maxConns int) Option {
 	return func(c *config) {

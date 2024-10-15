@@ -12,7 +12,7 @@ type AppConfig struct {
 }
 
 type DbConfig struct {
-	Dsn                 string `env:"DSN"`
+	DSN                 string `env:"DSN"`
 	MaxConns            int    `env:"MAX_CONNS"`
 	MaxIdleConns        int    `env:"MAX_IDLE_CONNS"`
 	MaxConnLifetime     int    `env:"MAX_CONN_LIFETIME"`

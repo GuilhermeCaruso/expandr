@@ -1,13 +1,11 @@
 package database
 
 import (
-	"database/sql"
 	"log"
 	"sync"
 
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 var (
@@ -16,26 +14,30 @@ var (
 )
 
 type Database struct {
-	Conn *bun.DB
+	Conn *gorm.DB
 }
 
 func NewDatabase(opts ...Option) *Database {
 	once.Do(func() {
 
 		internalConfig := newConfig(opts...)
+		dialect := postgres.Open(internalConfig.dsn)
+		db, err := gorm.Open(dialect, &gorm.Config{})
 
-		sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(internalConfig.dsn)))
+		if err != nil {
+			panic(err)
+		}
+
+		sqldb, err := db.DB()
+
+		if err := sqldb.Ping(); err != nil {
+			log.Fatalf("failed to connect to the database: %v", err)
+		}
 
 		sqldb.SetMaxOpenConns(internalConfig.maxConns)
 		sqldb.SetMaxIdleConns(internalConfig.maxIdleConns)
-		sqldb.SetConnMaxLifetime(internalConfig.maxConnLifetime)
 		sqldb.SetConnMaxIdleTime(internalConfig.maxConnIdleLifetime)
-
-		db := bun.NewDB(sqldb, pgdialect.New())
-
-		if err := db.Ping(); err != nil {
-			log.Fatalf("failed to connect to the database: %v", err)
-		}
+		sqldb.SetConnMaxLifetime(internalConfig.maxConnLifetime)
 
 		database = &Database{
 			Conn: db,

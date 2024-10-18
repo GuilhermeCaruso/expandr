@@ -4,12 +4,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/uptrace/bun"
+	"gorm.io/gorm"
 )
 
 type Metadata struct {
-	ID        uuid.UUID    `bun:"id,type:uuid,default:gen_random_uuid(),pk"`
-	CreatedAt time.Time    `bun:"created_at,nullzero,notnull,default:current_timestamp"`
-	UpdatedAt time.Time    `bun:"updated_at,nullzero,notnull,default:current_timestamp"`
-	DeletedAt bun.NullTime `bun:"deleted_at"`
+	ID        uuid.UUID      `json:"id" gorm:"primaryKey"`
+	CreatedAt time.Time      `json:"created_at,omitempty" gorm:"autoCreateTime"`
+	UpdatedAt time.Time      `json:"updated_at,omitempty" gorm:"autoUpdateTime"`
+	DeletedAt gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index"`
+}
+
+func (r *Metadata) BeforeCreate(tx *gorm.DB) (err error) {
+	if r.ID == uuid.Nil {
+		r.ID = uuid.New()
+	}
+	return
 }

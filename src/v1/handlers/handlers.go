@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"github.com/expandr/expandr/internal/server"
-	"github.com/expandr/expandr/internal/v1/handlers/health"
+	"github.com/expandr/expandr/src/v1/handlers/health"
 )
 
 func NewHandlers() server.HandlerContainer {

@@ -4,8 +4,7 @@ endef
 
 .PHONY: run/local
 run/local:
-	@./$(go env GOPATH)/bin/air
-
+	@air init
 
 .PHONY: setup/local
 setup/local:

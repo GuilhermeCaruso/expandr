@@ -1,7 +1,7 @@
 version: '3.0'
 
 services:
-  core_postgres:
+  expandr:
     container_name: expandr_db
     extends:
       file: ../common/docker-compose.yaml

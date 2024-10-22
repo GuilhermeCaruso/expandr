@@ -2,11 +2,13 @@ package database
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log"
 
 	"gorm.io/gorm"
 )
+
+type MigratorType string
 
 type MigratorStatus string
 
@@ -25,8 +27,9 @@ const (
 
 type MigratorTable struct {
 	gorm.Model
-	Hash   string         `json:"hash"`
-	Status MigratorStatus `json:"status"`
+	Hash   string          `json:"hash"`
+	Status MigratorStatus  `json:"status"`
+	Type   MigratorCommand `json:"type"`
 }
 
 func (MigratorTable) TableName() string {
@@ -46,6 +49,11 @@ type Migrator struct {
 	migrations []Migration
 }
 
+type MigratorParams struct {
+	Cmd         MigratorCommand
+	VersionHash *string
+}
+
 func NewMigrator() *Migrator {
 	migrator := new(Migrator)
 	return migrator
@@ -55,49 +63,70 @@ func (m *Migrator) RegisterMigration(migration Migration) {
 	m.migrations = append(m.migrations, migration)
 }
 
-func (m *Migrator) Execute(db *Database, cmd MigratorCommand) {
+func (m *Migrator) Execute(db *Database, params MigratorParams) {
 	m.db = db
 
-	switch cmd {
+	switch params.Cmd {
 	case INIT:
 		m.InitDatabaseMigrator()
 	case UP:
 		m.RunUp()
 	case DOWN:
-		break
+		if params.VersionHash != nil {
+			m.RunDown(*params.VersionHash)
+		} else {
+			log.Fatalf("version to down is required.")
+
+		}
 
 	}
 }
 
-func (m *Migrator) RunUp() {
+func (m *Migrator) checkMigratorTable() error {
+	if !m.db.Conn.Migrator().HasTable(&MigratorTable{}) {
+		log.Fatal("initialize migration controller first.")
+		return errors.New("failed to verify database")
+	}
+	return nil
+}
+
+func (m *Migrator) getLastMigration() (*MigratorTable, error) {
 	lastMigration := new(MigratorTable)
 
-	if err := m.db.Conn.Last(lastMigration).Error; err != nil {
+	if err := m.db.Conn.Where("status = ?", SUCCESS).Last(lastMigration).Error; err != nil {
 		if gorm.ErrRecordNotFound != err {
-			log.Fatalf("something went wrong searching last migration. %q", err)
+			return nil, err
 		}
 	}
 
-	migrationsToUp := make([]Migration, 0)
+	return lastMigration, nil
+}
 
-	if lastMigration.ID == 0 {
-		migrationsToUp = m.migrations
+func reverse[S ~[]E, E any](s S) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
 	}
+}
 
-	m.db.Conn.Transaction(func(tx *gorm.DB) error {
-		for x := 0; x < len(migrationsToUp); x++ {
-			mtu := migrationsToUp[x]
-			if err := mtu.Up(context.Background(), tx); err != nil {
+func (m *Migrator) Exec(migrations []Migration, action MigratorCommand) error {
+	if len(migrations) == 0 {
+		log.Println("no migration to perform")
+		return nil
+	}
+	return m.db.Conn.Transaction(func(tx *gorm.DB) error {
+		for x := 0; x < len(migrations); x++ {
+			mtu := migrations[x]
+			if err := mtu.Down(context.Background(), tx); err != nil {
 				log.Fatalf("fail to run migration %v. err:%q", mtu.Name, err)
 				tx.Transaction(func(tx2 *gorm.DB) error {
-					mt := MigratorTable{Hash: mtu.Name, Status: FAILED}
+					mt := MigratorTable{Hash: mtu.Name, Status: FAILED, Type: action}
 					return tx2.Create(&mt).Error
 				})
 				return err
 			} else {
 				log.Printf("migration %v was executed\n", mtu.Name)
 				tx.Transaction(func(tx3 *gorm.DB) error {
-					mt := MigratorTable{Hash: mtu.Name, Status: SUCCESS}
+					mt := MigratorTable{Hash: mtu.Name, Status: SUCCESS, Type: action}
 					return tx3.Create(&mt).Error
 				})
 
@@ -105,13 +134,72 @@ func (m *Migrator) RunUp() {
 		}
 		return nil
 	})
+}
 
-	fmt.Println(migrationsToUp)
+func (m *Migrator) RunDown(to string) {
+	if err := m.checkMigratorTable(); err != nil {
+		return
+	}
+
+	generalMigrations := m.migrations
+	reverse(generalMigrations)
+
+	lastMigrationsID := 0
+	for x := 0; x < len(generalMigrations); x++ {
+		if generalMigrations[x].Name == to {
+			lastMigrationsID = x
+			break
+		}
+	}
+
+	migrationsToDown := generalMigrations[:lastMigrationsID]
+
+	if err := m.Exec(migrationsToDown, DOWN); err != nil {
+		log.Fatalf("some migrations had problems.err=%q", err)
+		return
+	}
+
+	log.Println("all migrations were performed.")
+}
+
+func (m *Migrator) RunUp() {
+
+	if err := m.checkMigratorTable(); err != nil {
+		return
+	}
+
+	lastMigration, err := m.getLastMigration()
+
+	if err != nil {
+		log.Fatalf("something went wrong searching last migration. %q", err)
+	}
+
+	migrationsToUp := make([]Migration, 0)
+
+	if lastMigration.ID == 0 {
+		migrationsToUp = m.migrations
+	} else {
+		initialCursor := 0
+		for x := 0; x < len(m.migrations); x++ {
+			if m.migrations[x].Name == lastMigration.Hash {
+				initialCursor = x
+				break
+			}
+		}
+		migrationsToUp = m.migrations[initialCursor+1:]
+	}
+
+	if err := m.Exec(migrationsToUp, UP); err != nil {
+		log.Fatalf("some migrations had problems.err=%q", err)
+		return
+	}
+
+	log.Println("all migrations were performed.")
 }
 
 func (m *Migrator) InitDatabaseMigrator() {
 	if m.db.Conn.Migrator().HasTable(&MigratorTable{}) {
-		log.Println("database already initialized")
+		log.Println("database already initialized.")
 		return
 	}
 
@@ -120,6 +208,6 @@ func (m *Migrator) InitDatabaseMigrator() {
 		return
 	}
 
-	log.Println("database initialized successfully")
+	log.Println("database initialized successfully.")
 
 }
